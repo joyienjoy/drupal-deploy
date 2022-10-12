@@ -1,0 +1,103 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: drupal
+  labels:
+    app: drupal
+spec:
+   ports:
+   - port: 80
+     protocol: TCP
+   selector:
+    app: drupal
+    tier: frontend
+   type: LoadBalancer
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: drupal-pv-volume
+  labels:
+    type: local
+spec:
+  storageClassName: manual
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: "/mnt/test"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: drupal-claim
+  labels:
+    app: drupal
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: manual
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: drupal
+  labels:
+    app: drupal
+    tier: frontend
+spec:
+  selector:
+    matchLabels:
+      app: drupal
+      tier: frontend
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: drupal
+        tier: frontend
+    spec:
+       initContainers:
+        - name: init-sites-volume
+          image: drupal:8-apache
+          command: ['/bin/bash', '-c']
+          args: ['cp -r /var/www/html/sites /data; chown www-data:www-data /data/ -R']
+          volumeMounts:
+            - mountPath: /data
+              name: drupal
+       containers:
+       - image: drupal:8-apache
+         name: drupal
+         env:
+          - name: DRUPAL_DATABASE_HOST
+            value: mysql
+          - name: DRUPAL_DATABASE_PASSWORD
+            valueFrom:
+                secretKeyRef:
+                  name: mysql-secret
+                  key: password
+         ports:
+            - containerPort: 8081
+              name: drupal
+         volumeMounts:
+            - name: drupal
+              mountPath: /var/www/html/modules
+              subPath: modules
+            - name: drupal
+              mountPath: /var/www/html/profiles
+              subPath: profiles
+            - name: drupal
+              mountPath: /var/www/html/sites
+              subPath: sites
+            - name: drupal
+              mountPath: /var/www/html/themes
+              subPath: themes
+       volumes:
+        - name: drupal
+          persistentVolumeClaim:
+            claimName: drupal-claim
